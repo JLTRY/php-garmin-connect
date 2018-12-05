@@ -23,7 +23,6 @@ use dawguk\GarminConnect\exceptions\UnexpectedResponseCodeException;
 
 class GarminConnect
 {
-
     const DATA_TYPE_TCX = 'tcx';
     const DATA_TYPE_GPX = 'gpx';
     const DATA_TYPE_GOOGLE_EARTH = 'kml';
@@ -51,7 +50,6 @@ class GarminConnect
      */
     public function __construct(array $arrCredentials = array())
     {
-
         if (!isset($arrCredentials['username'])) {
             throw new \Exception("Username credential missing");
         }
@@ -64,6 +62,7 @@ class GarminConnect
         $this->objConnector = new Connector($intIdentifier);
 
         // If we can validate the cached auth, we don't need to do anything else
+
         if ($this->checkCookieAuth()) {
             return;
         }
@@ -76,13 +75,13 @@ class GarminConnect
         unset($arrCredentials['password']);
 
         $this->authorize($this->strUsername, $this->strPassword);
-
     }
 
     /**
      * Try to read the username from the API - if successful, it means we have a valid cookie, and we don't need to auth
      *
      * @return bool
+     * @throws UnexpectedResponseCodeException
      */
     private function checkCookieAuth()
     {
@@ -106,17 +105,21 @@ class GarminConnect
      */
     private function authorize($strUsername, $strPassword)
     {
-
         $arrParams = array(
-            'service' => 'https://connect.garmin.com/post-auth/login',
+            'service' => 'https://connect.garmin.com/modern/',
+            'webhost' => 'https://connect.garmin.com',
+            'source' => 'https://connect.garmin.com/en-US/signin',
             'clientId' => 'GarminConnect',
             'gauthHost' => 'https://sso.garmin.com/sso',
             'consumeServiceTicket' => 'false'
         );
         $strResponse = $this->objConnector->get("https://sso.garmin.com/sso/login", $arrParams);
         if ($this->objConnector->getLastResponseCode() != 200) {
-            throw new AuthenticationException(sprintf("SSO prestart error (code: %d, message: %s)",
-                $this->objConnector->getLastResponseCode(), $strResponse));
+            throw new AuthenticationException(sprintf(
+                "SSO prestart error (code: %d, message: %s)",
+                $this->objConnector->getLastResponseCode(),
+                $strResponse
+            ));
         }
 
         $arrData = array(
@@ -127,18 +130,10 @@ class GarminConnect
             "displayNameRequired" => "false"
         );
 
-        preg_match("/name=\"lt\"\s+value=\"([^\"]+)\"/", $strResponse, $arrMatches);
-        if (!isset($arrMatches[1])) {
-            throw new AuthenticationException("\"lt\" value wasn't found in response");
-        }
-
-        $arrData['lt'] = $arrMatches[1];
-
         $strResponse = $this->objConnector->post("https://sso.garmin.com/sso/login", $arrParams, $arrData, false);
-        preg_match("/ticket=([^']+)'/", $strResponse, $arrMatches);
+        preg_match("/ticket=([^\"]+)\"/", $strResponse, $arrMatches);
 
         if (!isset($arrMatches[1])) {
-
             $strMessage = "Authentication failed - please check your credentials";
 
             preg_match("/locked/", $strResponse, $arrLocked);
@@ -151,27 +146,27 @@ class GarminConnect
             throw new AuthenticationException($strMessage);
         }
 
-        $strTicket = $arrMatches[1];
+        $strTicket = $arrMatches[0];
         $arrParams = array(
             'ticket' => $strTicket
         );
 
-        $this->objConnector->post('https://connect.garmin.com/post-auth/login', $arrParams, null, false);
+        $this->objConnector->post('https://connect.garmin.com/modern/', $arrParams, null, false);
         if ($this->objConnector->getLastResponseCode() != 302) {
             throw new UnexpectedResponseCodeException($this->objConnector->getLastResponseCode());
         }
 
         // should only exist if the above response WAS a 302 ;)
-        $strRedirectUrl = $this->objConnector->getCurlInfo()['redirect_url'];
+        $arrCurlInfo = $this->objConnector->getCurlInfo();
+        $strRedirectUrl = $arrCurlInfo['redirect_url'];
 
-        $this->objConnector->get($strRedirectUrl, null, null, true);
-        if ($this->objConnector->getLastResponseCode() != 302) {
+        $this->objConnector->get($strRedirectUrl, null, true);
+        if (!in_array($this->objConnector->getLastResponseCode(), array(200, 302))) {
             throw new UnexpectedResponseCodeException($this->objConnector->getLastResponseCode());
         }
 
         // Fires up a fresh CuRL instance, because of our reliance on Cookies requiring "a new page load" as it were ...
         $this->objConnector->refreshSession();
-
     }
 
     /**
@@ -180,8 +175,11 @@ class GarminConnect
      */
     public function getActivityTypes()
     {
-        $strResponse = $this->objConnector->get('https://connect.garmin.com/proxy/activity-service-1.2/json/activity_types',
-            null, null, false);
+        $strResponse = $this->objConnector->get(
+            'https://connect.garmin.com/proxy/activity-service-1.2/json/activity_types',
+            null,
+            false
+        );
         if ($this->objConnector->getLastResponseCode() != 200) {
             throw new UnexpectedResponseCodeException($this->objConnector->getLastResponseCode());
         }
@@ -199,14 +197,17 @@ class GarminConnect
      */
     public function getActivityList($intStart = 0, $intLimit = 10)
     {
-
         $arrParams = array(
             'start' => $intStart,
             'limit' => $intLimit
         );
 
-        $strResponse = $this->objConnector->get('https://connect.garmin.com/proxy/activity-search-service-1.0/json/activities',
-            $arrParams, true);
+        $strResponse = $this->objConnector->get(
+            'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities',
+            $arrParams,
+            true
+        );
+
         if ($this->objConnector->getLastResponseCode() != 200) {
             throw new UnexpectedResponseCodeException($this->objConnector->getLastResponseCode());
         }
@@ -272,9 +273,7 @@ class GarminConnect
      */
     public function getDataFile($strType, $intActivityID)
     {
-
         switch ($strType) {
-
             case self::DATA_TYPE_GPX:
             case self::DATA_TYPE_TCX:
             case self::DATA_TYPE_GOOGLE_EARTH:
@@ -282,7 +281,6 @@ class GarminConnect
 
             default:
                 throw new \Exception("Unsupported data type");
-
         }
 
         $strUrl = "https://connect.garmin.com/proxy/download-service/export/" . $strType . "/activity/" . $intActivityID;
@@ -300,12 +298,11 @@ class GarminConnect
      */
     public function getUsername()
     {
-        $strResponse = $this->objConnector->get('https://connect.garmin.com/user/username');
+        $strResponse = $this->objConnector->get('https://connect.garmin.com/modern/currentuser-service/user/info');
         if ($this->objConnector->getLastResponseCode() != 200) {
             throw new UnexpectedResponseCodeException($this->objConnector->getLastResponseCode());
         }
         $objResponse = json_decode($strResponse);
         return $objResponse->username;
     }
-
 }
