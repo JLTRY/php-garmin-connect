@@ -27,6 +27,14 @@ class Connector
     private $objCurl = null;
     private $arrCurlInfo = array();
     private $strCookieDirectory = '';
+	
+	private $agents = array(
+	'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.7; rv:7.0.1) Gecko/20100101 Firefox/7.0.1',
+	'Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.1.9) Gecko/20100508 SeaMonkey/2.0.4',
+	'Mozilla/5.0 (Windows; U; MSIE 7.0; Windows NT 6.0; en-US)',
+	'Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_7; da-dk) AppleWebKit/533.21.1 (KHTML, like Gecko) Version/5.0.5 Safari/533.21.1'
+	);
+
 
    /**
     * @var array
@@ -40,7 +48,8 @@ class Connector
       CURLOPT_VERBOSE => false,
       CURLOPT_FRESH_CONNECT => true,
       CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:61.0) Gecko/20100101 Firefox/61.0',
-      CURLOPT_ENCODING => 'gzip',
+      CURLOPT_ENCODING => 'gzip'
+      //CURLOPT_SSLVERSION => 6
     );
 
    /**
@@ -53,13 +62,47 @@ class Connector
     */
     private $strCookieFile = '';
 
+	private $log = false;
+	private $logfile = NULL;
+	private $count = 0;
+	function clean_log(){					
+		if (file_exists($this->logfile)) {
+			unlink($this->logfile);
+		}
+		$count = 0;
+		while(file_exists($this->logfile . "." . $count . ".html")) {
+				unlink($this->logfile  . "." . $count . ".html");
+				$count = $count + 1;
+		}
+	}
+	
+	function my_log($msg , $count=False){		
+		if ($this->logfile != NULL) {			
+			if ($count == False)
+			{
+				$fp = fopen($this->logfile, "a");
+				fwrite($fp, "[CONNECTOR] " . date("Y/m/d H:i:s").":" .  $msg ."\n");
+			}
+			else
+			{
+				$fp = fopen($this->logfile . "." . $this->count . ".html", "a");
+				$this->count = $this->count + 1;
+				fwrite($fp, $msg);
+			}
+			
+			fclose($fp);
+		}	
+	}
    /**
     * @param string $strUniqueIdentifier
     * @throws Exception
     */
-    public function __construct($strUniqueIdentifier)
-    {
-        $this->strCookieDirectory = sys_get_temp_dir();
+   public function __construct($strUniqueIdentifier, $logfile=NULL) {
+		$this->logfile = $logfile;
+		if ($logfile != NULL) {
+			$this->clean_log();
+		}
+		$this->strCookieDirectory = dirname(__FILE__);
         if (strlen(trim($strUniqueIdentifier)) == 0) {
             throw new Exception("Identifier isn't valid");
         }
@@ -72,9 +115,11 @@ class Connector
     */
     public function refreshSession()
     {
+	   $this->my_log("resfresh session");
         $this->objCurl = curl_init();
         $this->arrCurlOptions[CURLOPT_COOKIEJAR] = $this->strCookieFile;
         $this->arrCurlOptions[CURLOPT_COOKIEFILE] = $this->strCookieFile;
+		//$this->arrCurlOptions[CURLOPT_USERAGENT] = $this->agents[array_rand($this->agents)];
         curl_setopt_array($this->objCurl, $this->arrCurlOptions);
     }
 
@@ -89,6 +134,7 @@ class Connector
         if (null !== $arrParams && count($arrParams)) {
             $strUrl .= '?' . http_build_query($arrParams);
         }
+	   $this->my_log("get:" . $strUrl);
 
         curl_setopt($this->objCurl, CURLOPT_HTTPHEADER, array(
             'NK: NT'
@@ -96,6 +142,7 @@ class Connector
         curl_setopt($this->objCurl, CURLOPT_URL, $strUrl);
         curl_setopt($this->objCurl, CURLOPT_FOLLOWLOCATION, (bool)$bolAllowRedirects);
         curl_setopt($this->objCurl, CURLOPT_CUSTOMREQUEST, 'GET');
+        //curl_setopt_array($this->objCurl, $this->arrCurlOptions);
 
         $strResponse = curl_exec($this->objCurl);
         $arrCurlInfo = curl_getinfo($this->objCurl);
@@ -135,6 +182,7 @@ class Connector
         if (! empty($arrParams)) {
             $strUrl .= '?' . http_build_query($arrParams);
         }
+        //curl_setopt_array($this->objCurl, $this->arrCurlOptions);
         curl_setopt($this->objCurl, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($this->objCurl, CURLOPT_HEADER, false);
         curl_setopt($this->objCurl, CURLOPT_FRESH_CONNECT, true);
@@ -147,6 +195,7 @@ class Connector
         $strResponse = curl_exec($this->objCurl);
         $this->arrCurlInfo = curl_getinfo($this->objCurl);
         $this->intLastResponseCode = (int)$this->arrCurlInfo['http_code'];
+        $this->my_log("post:" . $strUrl .  print_r($arrData, true) ."\n" . $this->intLastResponseCode . "\n" . $strResponse, True);
         return $strResponse;
     }
 
