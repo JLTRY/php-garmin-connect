@@ -20,6 +20,17 @@ session state. Ugh.
 Full Example
 ============
 
+2026/01 : adaptation with garth porting https://github.com/matin/garth
+The credentials need 2 mandatory additionnal parameters
+and one optional
+    'consumer_key' => "xxxx",
+    'consumer_secret' => "xxxx",
+    'tokenstore' => "<directory>"
+The first one are used for getting credentials oauth1 steps and oauth2 steps for access to Garmin API
+The third one is used to store oauth1 and oauth2 token and bearer
+We added also traces so after unzipping the code source the command line must be launched
+```composer update ```
+
 We simply connect using our Garmin Connect credentials.
 
 ```php
