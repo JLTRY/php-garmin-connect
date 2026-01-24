@@ -146,11 +146,29 @@ class GarminConnect
                 $strResponse
             ));
         }
-        return json_decode($strResponse, true);
+        $oauth2Data = json_decode($strResponse, true);
+        $oauth2Data['expires_at'] = $oauth2Data['expires_in'] + time();
+        $oauth2Data['refresh_token_expires_at'] = $oauth2Data['refresh_token_expires_in'] + time();
+        return $oauth2Data ;
     }
 
-
-
+    public function hasValidTokens()
+    {
+        $valid = false;
+        if (isset($this->oAuth1Token) && isset($this->oAuth2Token))
+        {
+            if (array_key_exists('expires_at', $this->oAuth2Token) && ($this->oAuth2Token['expires_at'] > time()))
+            {
+                $this->objConnector->log("oAuth2 is still valid:" .  date('d/m/Y H:i:s', $this->oAuth2Token['expires_at']));
+                $valid = true;
+            }
+            else 
+            {
+                $this->objConnector->log("oAuth2 expired or no expires_at");
+            }
+        }
+        return $valid;
+    }
 
     /**
      * Because there doesn't appear to be a nice "API" way to authenticate with Garmin Connect, we have to effectively spoof
@@ -188,7 +206,7 @@ class GarminConnect
                 $this->oAuth2Token = $data;
             }
         }
-        if (isset($this->oAuth1Token) && isset($this->oAuth2Token)) return;
+        if ($this->hasValidTokens()) return;
         $strUsername = $this->strUsername;
         $strPassword =  $this->strPassword;
         $SSO = "https://sso.garmin.com/sso";
